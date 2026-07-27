@@ -1,8 +1,7 @@
-use crate::rdev::{Button, EventType, SimulateError};
+use crate::rdev::{Button, EventType, SimulateError, WheelDeltaUnit};
 use crate::windows::keycodes::code_from_key;
-use std::convert::TryFrom;
 use std::mem::size_of;
-use winapi::ctypes::{c_int, c_short};
+use winapi::ctypes::c_int;
 use winapi::shared::minwindef::{DWORD, UINT, WORD};
 use winapi::shared::ntdef::LONG;
 use winapi::um::winuser::{
@@ -10,10 +9,17 @@ use winapi::um::winuser::{
     MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_HWHEEL, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
     MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN,
     MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_WHEEL, MOUSEEVENTF_XDOWN,
-    MOUSEEVENTF_XUP, MOUSEINPUT, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SendInput, WHEEL_DELTA,
+    MOUSEEVENTF_XUP, MOUSEINPUT, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SendInput,
 };
 /// Not defined in win32 but define here for clarity
 static KEYEVENTF_KEYDOWN: DWORD = 0;
+fn native_wheel_delta(value: f64) -> DWORD {
+    if value.is_finite() {
+        value.round().clamp(i32::MIN as f64, i32::MAX as f64) as i32 as DWORD
+    } else {
+        0
+    }
+}
 
 fn sim_mouse_event(flags: DWORD, data: DWORD, dx: LONG, dy: LONG) -> Result<(), SimulateError> {
     let mut union: INPUT_u = unsafe { std::mem::zeroed() };
@@ -94,23 +100,14 @@ pub fn simulate(event_type: &EventType) -> Result<(), SimulateError> {
             Button::Right => sim_mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0),
             Button::Unknown(code) => sim_mouse_event(MOUSEEVENTF_XUP, (*code).into(), 0, 0),
         },
-        EventType::Wheel { delta_x, delta_y } => {
-            if *delta_x != 0 {
-                sim_mouse_event(
-                    MOUSEEVENTF_HWHEEL,
-                    (c_short::try_from(*delta_x).map_err(|_| SimulateError)? * WHEEL_DELTA) as u32,
-                    0,
-                    0,
-                )?;
+        EventType::Wheel(wheel) => {
+            let (delta_x, delta_y) = wheel.deltas_in(WheelDeltaUnit::WindowsWheelDelta);
+            if delta_x != 0.0 {
+                sim_mouse_event(MOUSEEVENTF_HWHEEL, native_wheel_delta(delta_x), 0, 0)?;
             }
 
-            if *delta_y != 0 {
-                sim_mouse_event(
-                    MOUSEEVENTF_WHEEL,
-                    (c_short::try_from(*delta_y).map_err(|_| SimulateError)? * WHEEL_DELTA) as u32,
-                    0,
-                    0,
-                )?;
+            if delta_y != 0.0 {
+                sim_mouse_event(MOUSEEVENTF_WHEEL, native_wheel_delta(delta_y), 0, 0)?;
             }
             Ok(())
         }

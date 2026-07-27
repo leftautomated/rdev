@@ -1,10 +1,18 @@
 use super::common::{FALSE, TRUE};
 use super::keycodes::code_from_key;
-use crate::rdev::{Button, EventType, SimulateError};
+use crate::rdev::{Button, EventType, SimulateError, WheelDeltaUnit};
 use std::os::raw::c_int;
 use std::ptr::null;
 use x11::xlib;
 use x11::xtest;
+
+fn line_delta(lines: f64) -> i64 {
+    if lines.is_finite() {
+        lines.round().clamp(i64::MIN as f64, i64::MAX as f64) as i64
+    } else {
+        0
+    }
+}
 
 unsafe fn send_native(event_type: &EventType, display: *mut xlib::Display) -> Option<()> {
     unsafe {
@@ -48,9 +56,12 @@ unsafe fn send_native(event_type: &EventType, display: *mut xlib::Display) -> Op
                 xtest::XTestFakeMotionEvent(display, 0, x, y, 0)
                 //     xlib::XWarpPointer(display, 0, root, 0, 0, 0, 0, *x as i32, *y as i32);
             }
-            EventType::Wheel { delta_x, delta_y } => {
-                let code_x = if *delta_x > 0 { 7 } else { 6 };
-                let code_y = if *delta_y > 0 { 4 } else { 5 };
+            EventType::Wheel(wheel) => {
+                let (delta_x, delta_y) = wheel.deltas_in(WheelDeltaUnit::Lines);
+                let delta_x = line_delta(delta_x);
+                let delta_y = line_delta(delta_y);
+                let code_x = if delta_x > 0 { 7 } else { 6 };
+                let code_y = if delta_y > 0 { 4 } else { 5 };
 
                 let mut result: c_int = 1;
                 for _ in 0..delta_x.abs() {

@@ -1,4 +1,4 @@
-use rdev::{Button, EventType, Key, SimulateError, simulate};
+use rdev::{Button, EventType, Key, SimulateError, WheelEvent, simulate};
 use std::{
     thread,
     time::{self, Duration},
@@ -30,8 +30,5 @@ fn main() {
     send(&EventType::MouseMove { x: 400.0, y: 400.0 });
     send(&EventType::ButtonPress(Button::Left));
     send(&EventType::ButtonRelease(Button::Right));
-    send(&EventType::Wheel {
-        delta_x: 0,
-        delta_y: 1,
-    });
+    send(&EventType::Wheel(WheelEvent::lines(0.0, 1.0)));
 }

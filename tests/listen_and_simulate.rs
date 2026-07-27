@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use rdev::{Button, Event, EventType, Key, listen, simulate};
+use rdev::{Button, Event, EventType, Key, WheelEvent, listen, simulate};
 use serial_test::serial;
 use std::error::Error;
 use std::iter::Iterator;
@@ -22,6 +22,21 @@ fn send_event(event: Event) {
         .expect("Failed to unlock Mutex")
         .send(event)
         .expect("Receiving end of EVENT_CHANNEL was closed");
+}
+
+#[cfg(target_os = "macos")]
+fn native_wheel(delta_y: f64) -> WheelEvent {
+    WheelEvent::pixels(0.0, delta_y)
+}
+
+#[cfg(target_os = "windows")]
+fn native_wheel(delta_y: f64) -> WheelEvent {
+    WheelEvent::windows_wheel_delta(0.0, delta_y * 120.0)
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn native_wheel(delta_y: f64) -> WheelEvent {
+    WheelEvent::lines(0.0, delta_y)
 }
 
 fn sim_then_listen(events: &mut dyn Iterator<Item = EventType>) -> Result<(), Box<dyn Error>> {
@@ -55,14 +70,8 @@ fn test_listen_and_simulate() -> Result<(), Box<dyn Error>> {
         EventType::KeyRelease(Key::KeyS),
         EventType::ButtonPress(Button::Right),
         EventType::ButtonRelease(Button::Right),
-        EventType::Wheel {
-            delta_x: 0,
-            delta_y: 1,
-        },
-        EventType::Wheel {
-            delta_x: 0,
-            delta_y: -1,
-        },
+        EventType::Wheel(native_wheel(1.0)),
+        EventType::Wheel(native_wheel(-1.0)),
     ]
     .into_iter();
     let click_events = (0..480).map(|pixel| EventType::MouseMove {

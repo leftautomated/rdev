@@ -244,8 +244,99 @@ pub enum Button {
     Unknown(u8),
 }
 
-/// In order to manage different OSs, the current EventType choices are a mix and
-/// match to account for all possible events.
+/// Unit used by a [`WheelEvent`]'s deltas.
+#[derive(Debug, Copy, Clone, PartialEq)]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+pub enum WheelDeltaUnit {
+    /// Screen-space points or pixels after platform scroll acceleration.
+    Pixels,
+    /// Logical lines or discrete wheel clicks.
+    Lines,
+    /// Native Windows wheel units, where 120 is one logical click.
+    WindowsWheelDelta,
+}
+
+const WINDOWS_WHEEL_DELTA: f64 = 120.0;
+const APPROXIMATE_PIXELS_PER_LINE: f64 = 10.0;
+
+/// Additional scroll-sequence information exposed by platforms that support it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+pub struct WheelEvent {
+    /// Horizontal movement in [`Self::unit`].
+    pub delta_x: f64,
+    /// Vertical movement in [`Self::unit`].
+    pub delta_y: f64,
+    pub unit: WheelDeltaUnit,
+    /// Native gesture phase. Zero means the platform supplied no phase.
+    pub phase: i64,
+    /// Native momentum phase. Zero means the event is not momentum scrolling.
+    pub momentum_phase: i64,
+    /// Whether the platform classified this as continuous scrolling.
+    pub is_continuous: bool,
+}
+
+impl WheelEvent {
+    /// Construct a pixel/point scroll event without gesture metadata.
+    pub const fn pixels(delta_x: f64, delta_y: f64) -> Self {
+        Self {
+            delta_x,
+            delta_y,
+            unit: WheelDeltaUnit::Pixels,
+            phase: 0,
+            momentum_phase: 0,
+            is_continuous: false,
+        }
+    }
+
+    /// Construct a discrete line-based scroll event without gesture metadata.
+    pub const fn lines(delta_x: f64, delta_y: f64) -> Self {
+        Self {
+            delta_x,
+            delta_y,
+            unit: WheelDeltaUnit::Lines,
+            phase: 0,
+            momentum_phase: 0,
+            is_continuous: false,
+        }
+    }
+
+    /// Construct a native Windows-v120 scroll event without gesture metadata.
+    pub const fn windows_wheel_delta(delta_x: f64, delta_y: f64) -> Self {
+        Self {
+            delta_x,
+            delta_y,
+            unit: WheelDeltaUnit::WindowsWheelDelta,
+            phase: 0,
+            momentum_phase: 0,
+            is_continuous: (delta_x != 0.0 && delta_x > -120.0 && delta_x < 120.0)
+                || (delta_y != 0.0 && delta_y > -120.0 && delta_y < 120.0),
+        }
+    }
+
+    /// Return the deltas converted to `unit`.
+    ///
+    /// Pixel/line conversion is necessarily approximate; native-unit replay on
+    /// the recording platform does not use that approximation.
+    pub fn deltas_in(self, unit: WheelDeltaUnit) -> (f64, f64) {
+        let to_lines = |delta| match self.unit {
+            WheelDeltaUnit::Pixels => delta / APPROXIMATE_PIXELS_PER_LINE,
+            WheelDeltaUnit::Lines => delta,
+            WheelDeltaUnit::WindowsWheelDelta => delta / WINDOWS_WHEEL_DELTA,
+        };
+        let from_lines = |lines| match unit {
+            WheelDeltaUnit::Pixels => lines * APPROXIMATE_PIXELS_PER_LINE,
+            WheelDeltaUnit::Lines => lines,
+            WheelDeltaUnit::WindowsWheelDelta => lines * WINDOWS_WHEEL_DELTA,
+        };
+        (
+            from_lines(to_lines(self.delta_x)),
+            from_lines(to_lines(self.delta_y)),
+        )
+    }
+}
+
+/// Cross-platform keyboard and pointer event.
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 pub enum EventType {
@@ -262,13 +353,8 @@ pub enum EventType {
         x: f64,
         y: f64,
     },
-    /// `delta_y` represents vertical scroll and `delta_x` represents horizontal scroll.
-    /// Positive values correspond to scrolling up or right and negative values
-    /// correspond to scrolling down or left
-    Wheel {
-        delta_x: i64,
-        delta_y: i64,
-    },
+    /// Positive deltas scroll up or right; negative deltas scroll down or left.
+    Wheel(WheelEvent),
 }
 
 /// When events arrive from the OS they get some additional information added from

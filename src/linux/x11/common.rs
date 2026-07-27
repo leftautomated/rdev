@@ -1,6 +1,6 @@
 use super::keyboard::Keyboard;
 use super::keycodes::key_from_code;
-use crate::rdev::{Button, Event, EventType, KeyboardState};
+use crate::rdev::{Button, Event, EventType, KeyboardState, WheelEvent};
 use std::convert::TryInto;
 use std::os::raw::{c_int, c_uchar, c_uint};
 use std::ptr::null;
@@ -27,29 +27,17 @@ pub fn convert_event(code: c_uchar, type_: c_int, x: f64, y: f64) -> Option<Even
             1 => Some(EventType::ButtonPress(Button::Left)),
             2 => Some(EventType::ButtonPress(Button::Middle)),
             3 => Some(EventType::ButtonPress(Button::Right)),
-            4 => Some(EventType::Wheel {
-                delta_y: 1,
-                delta_x: 0,
-            }),
-            5 => Some(EventType::Wheel {
-                delta_y: -1,
-                delta_x: 0,
-            }),
-            6 => Some(EventType::Wheel {
-                delta_y: 0,
-                delta_x: -1,
-            }),
-            7 => Some(EventType::Wheel {
-                delta_y: 0,
-                delta_x: 1,
-            }),
+            4 => Some(EventType::Wheel(WheelEvent::lines(0.0, 1.0))),
+            5 => Some(EventType::Wheel(WheelEvent::lines(0.0, -1.0))),
+            6 => Some(EventType::Wheel(WheelEvent::lines(-1.0, 0.0))),
+            7 => Some(EventType::Wheel(WheelEvent::lines(1.0, 0.0))),
             code => Some(EventType::ButtonPress(Button::Unknown(code))),
         },
         xlib::ButtonRelease => match code {
             1 => Some(EventType::ButtonRelease(Button::Left)),
             2 => Some(EventType::ButtonRelease(Button::Middle)),
             3 => Some(EventType::ButtonRelease(Button::Right)),
-            4 | 5 => None,
+            4..=7 => None,
             _ => Some(EventType::ButtonRelease(Button::Unknown(code))),
         },
         xlib::MotionNotify => Some(EventType::MouseMove { x, y }),

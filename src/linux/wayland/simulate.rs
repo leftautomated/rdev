@@ -141,13 +141,22 @@ impl Handle {
                         .write(&[event_x, event_y, sync])
                         .map_err(|_| SimulateError)?;
                 }
-                EventType::Wheel { delta_x, delta_y } => {
+                EventType::Wheel(wheel) => {
                     let time = Self::get_current_time();
+                    let (delta_x, delta_y) =
+                        wheel.deltas_in(crate::WheelDeltaUnit::WindowsWheelDelta);
+                    let to_v120 = |value: f64| {
+                        if value.is_finite() {
+                            value.round().clamp(i32::MIN as f64, i32::MAX as f64) as i32
+                        } else {
+                            0
+                        }
+                    };
                     let event_x =
-                        RelativeEvent::new(time, RelativeAxis::WheelHiRes, (*delta_x * 120) as i32);
+                        RelativeEvent::new(time, RelativeAxis::WheelHiRes, to_v120(delta_x));
                     let event_x: input_event = InputEvent::from(event_x).into();
                     let event_y =
-                        RelativeEvent::new(time, RelativeAxis::WheelHiRes, (*delta_y * 120) as i32);
+                        RelativeEvent::new(time, RelativeAxis::WheelHiRes, to_v120(delta_y));
                     let event_y: input_event = InputEvent::from(event_y).into();
                     let sync = SynchronizeEvent::new(time, SynchronizeKind::Report, 0);
                     let sync: input_event = InputEvent::from(sync).into();

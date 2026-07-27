@@ -2,7 +2,7 @@ extern crate libc;
 use super::keyboard::Keyboard;
 use super::keycodes::key_from_code;
 use crate::rdev::{Event, KeyboardState, ListenError};
-use crate::{Button, EventType};
+use crate::{Button, EventType, WheelDeltaUnit, WheelEvent};
 use input::event::PointerEvent;
 use input::event::keyboard::{KeyState, KeyboardEventTrait};
 use input::event::pointer::{Axis, ButtonState};
@@ -51,10 +51,18 @@ fn convert_type(libevent: LibEvent) -> Option<EventType> {
             x: btn.absolute_x(),
             y: btn.absolute_y(),
         }),
-        LibEvent::Pointer(PointerEvent::ScrollWheel(btn)) => Some(EventType::Wheel {
-            delta_x: -(btn.scroll_value_v120(Axis::Horizontal) / 120.0) as i64,
-            delta_y: -(btn.scroll_value_v120(Axis::Vertical) / 120.0) as i64,
-        }),
+        LibEvent::Pointer(PointerEvent::ScrollWheel(btn)) => {
+            let delta_x = -btn.scroll_value_v120(Axis::Horizontal);
+            let delta_y = -btn.scroll_value_v120(Axis::Vertical);
+            Some(EventType::Wheel(WheelEvent {
+                delta_x,
+                delta_y,
+                unit: WheelDeltaUnit::WindowsWheelDelta,
+                phase: 0,
+                momentum_phase: 0,
+                is_continuous: delta_x.abs() < 120.0 || delta_y.abs() < 120.0,
+            }))
+        }
         _ => {
             // dbg!(format!("Received unhandlded event {lib:?}"));
             None

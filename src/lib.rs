@@ -42,7 +42,7 @@
 //! # Sending some events
 //!
 //! ```no_run
-//! use rdev::{simulate, Button, EventType, Key, SimulateError};
+//! use rdev::{simulate, Button, EventType, Key, SimulateError, WheelEvent};
 //! use std::{thread, time};
 //!
 //! fn send(event_type: &EventType) {
@@ -64,10 +64,7 @@
 //! send(&EventType::MouseMove { x: 400.0, y: 400.0 });
 //! send(&EventType::ButtonPress(Button::Left));
 //! send(&EventType::ButtonRelease(Button::Right));
-//! send(&EventType::Wheel {
-//!     delta_x: 0,
-//!     delta_y: 1,
-//! });
+//! send(&EventType::Wheel(WheelEvent::lines(0.0, 1.0)));
 //! ```
 //! # Main structs
 //! ## Event
@@ -126,12 +123,7 @@
 //!         x: f64,
 //!         y: f64,
 //!     },
-//!     /// Note: On Linux, there is no actual delta the actual values are ignored for delta_x
-//!     /// and we only look at the sign of delta_y to simulate wheelup or wheeldown.
-//!     Wheel {
-//!         delta_x: i64,
-//!         delta_y: i64,
-//!     },
+//!     Wheel(WheelEvent),
 //! }
 //! ```
 //!
@@ -220,7 +212,7 @@
 mod rdev;
 pub use crate::rdev::{
     Button, DisplayError, Event, EventType, GrabCallback, GrabError, Key, KeyboardState,
-    ListenError, SimulateError,
+    ListenError, SimulateError, WheelDeltaUnit, WheelEvent,
 };
 
 #[cfg(target_os = "macos")]
@@ -275,7 +267,7 @@ where
 /// Sending some events
 ///
 /// ```no_run
-/// use rdev::{simulate, Button, EventType, Key, SimulateError};
+/// use rdev::{simulate, Button, EventType, Key, SimulateError, WheelEvent};
 /// use std::{thread, time};
 ///
 /// fn send(event_type: &EventType) {
@@ -298,10 +290,7 @@ where
 ///     send(&EventType::MouseMove { x: 400.0, y: 400.0 });
 ///     send(&EventType::ButtonPress(Button::Left));
 ///     send(&EventType::ButtonRelease(Button::Right));
-///     send(&EventType::Wheel {
-///         delta_x: 0,
-///         delta_y: 1,
-///     });
+///     send(&EventType::Wheel(WheelEvent::lines(0.0, 1.0)));
 /// }
 /// ```
 pub fn simulate(event_type: &EventType) -> Result<(), SimulateError> {
@@ -422,5 +411,39 @@ mod tests {
         // let e = keyboard.add(&EventType::KeyPress(Key::KeyE)).unwrap();
         // assert_eq!(e, "é".to_string());
         // keyboard.add(&EventType::KeyRelease(Key::KeyE));
+    }
+
+    #[test]
+    fn windows_wheel_delta_preserves_sub_detent_movement() {
+        let wheel = WheelEvent::windows_wheel_delta(0.0, 30.0);
+
+        assert_eq!(
+            wheel.deltas_in(WheelDeltaUnit::WindowsWheelDelta),
+            (0.0, 30.0)
+        );
+    }
+
+    #[test]
+    fn line_delta_converts_to_one_windows_detent() {
+        let wheel = WheelEvent::lines(0.0, 1.0);
+
+        assert_eq!(
+            wheel.deltas_in(WheelDeltaUnit::WindowsWheelDelta),
+            (0.0, 120.0)
+        );
+    }
+
+    #[test]
+    fn pixel_delta_preserves_fractional_movement() {
+        let wheel = WheelEvent::pixels(0.25, -1.5);
+
+        assert_eq!(wheel.deltas_in(WheelDeltaUnit::Pixels), (0.25, -1.5));
+    }
+
+    #[test]
+    fn sub_detent_windows_scroll_is_continuous() {
+        let wheel = WheelEvent::windows_wheel_delta(0.0, -60.0);
+
+        assert!(wheel.is_continuous);
     }
 }

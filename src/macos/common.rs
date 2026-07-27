@@ -1,6 +1,6 @@
 #![allow(clippy::upper_case_acronyms)]
 use crate::macos::keyboard::Keyboard;
-use crate::rdev::{Button, Event, EventType};
+use crate::rdev::{Button, Event, EventType, WheelDeltaUnit, WheelEvent};
 use core::ptr::NonNull;
 use lazy_static::lazy_static;
 use objc2_core_graphics::{CGEvent, CGEventField, CGEventFlags, CGEventType};
@@ -15,6 +15,14 @@ use super::keycodes::key_from_special_key;
 lazy_static! {
     pub static ref LAST_FLAGS: Mutex<CGEventFlags> = Mutex::new(CGEventFlags(0));
     pub static ref KEYBOARD_STATE: Mutex<Keyboard> = Mutex::new(Keyboard::new().unwrap());
+}
+
+fn fixed_delta_to_points(fixed: i64, fallback_points: i64) -> f64 {
+    if fixed == 0 {
+        fallback_points as f64
+    } else {
+        fixed as f64 / 65_536.0
+    }
 }
 
 pub fn set_is_main_thread(b: bool) {
@@ -131,20 +139,39 @@ pub unsafe fn convert(
                 }
             }
             CGEventType::ScrollWheel => {
-                // Use the pixel-precision point deltas rather than the coarse
-                // line-based DeltaAxis fields: continuous (trackpad) scrolls
-                // quantize to 0/±1 lines, losing most of the gesture. Pixel
-                // units also match what `simulate` emits (CGScrollEventUnit::Pixel),
-                // so a listen→simulate round trip preserves scroll magnitude.
-                let delta_y = CGEvent::integer_value_field(
+                let fixed_delta_y = CGEvent::integer_value_field(
+                    Some(cg_event.as_ref()),
+                    CGEventField::ScrollWheelEventFixedPtDeltaAxis1,
+                );
+                let fixed_delta_x = CGEvent::integer_value_field(
+                    Some(cg_event.as_ref()),
+                    CGEventField::ScrollWheelEventFixedPtDeltaAxis2,
+                );
+                let point_delta_y = CGEvent::integer_value_field(
                     Some(cg_event.as_ref()),
                     CGEventField::ScrollWheelEventPointDeltaAxis1,
                 );
-                let delta_x = CGEvent::integer_value_field(
+                let point_delta_x = CGEvent::integer_value_field(
                     Some(cg_event.as_ref()),
                     CGEventField::ScrollWheelEventPointDeltaAxis2,
                 );
-                Some(EventType::Wheel { delta_x, delta_y })
+                Some(EventType::Wheel(WheelEvent {
+                    delta_x: fixed_delta_to_points(fixed_delta_x, point_delta_x),
+                    delta_y: fixed_delta_to_points(fixed_delta_y, point_delta_y),
+                    unit: WheelDeltaUnit::Pixels,
+                    phase: CGEvent::integer_value_field(
+                        Some(cg_event.as_ref()),
+                        CGEventField::ScrollWheelEventScrollPhase,
+                    ),
+                    momentum_phase: CGEvent::integer_value_field(
+                        Some(cg_event.as_ref()),
+                        CGEventField::ScrollWheelEventMomentumPhase,
+                    ),
+                    is_continuous: CGEvent::integer_value_field(
+                        Some(cg_event.as_ref()),
+                        CGEventField::ScrollWheelEventIsContinuous,
+                    ) != 0,
+                }))
             }
             CGEventType(14) => {
                 // Core graphics doesnt support NX_SYSDEFINED yet
@@ -201,4 +228,19 @@ pub unsafe fn convert(
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fixed_delta_to_points;
+
+    #[test]
+    fn fixed_delta_preserves_fractional_points() {
+        assert_eq!(fixed_delta_to_points(98_304, 2), 1.5);
+    }
+
+    #[test]
+    fn zero_fixed_delta_uses_integer_point_fallback() {
+        assert_eq!(fixed_delta_to_points(0, -3), -3.0);
+    }
 }

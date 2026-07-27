@@ -314,14 +314,14 @@ fn evdev_event_to_rdev_event(
                 }
                 Some(EventType::MouseMove { x: *x, y: *y })
             }
-            EV_REL::REL_HWHEEL => Some(EventType::Wheel {
-                delta_x: event.value.into(),
-                delta_y: 0,
-            }),
-            EV_REL::REL_WHEEL => Some(EventType::Wheel {
-                delta_x: 0,
-                delta_y: event.value.into(),
-            }),
+            EV_REL::REL_HWHEEL => Some(EventType::Wheel(crate::WheelEvent::lines(
+                event.value.into(),
+                0.0,
+            ))),
+            EV_REL::REL_WHEEL => Some(EventType::Wheel(crate::WheelEvent::lines(
+                0.0,
+                event.value.into(),
+            ))),
             // Other EV_REL events cannot be represented by rdev
             _ => None,
         },

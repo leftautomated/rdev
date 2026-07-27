@@ -1,4 +1,4 @@
-use crate::rdev::{Button, EventType};
+use crate::rdev::{Button, EventType, WheelDeltaUnit, WheelEvent};
 use crate::windows::keyboard::Keyboard;
 use crate::windows::keycodes::key_from_code;
 use lazy_static::lazy_static;
@@ -11,10 +11,10 @@ use winapi::shared::ntdef::LONG;
 use winapi::shared::windef::HHOOK;
 use winapi::um::errhandlingapi::GetLastError;
 use winapi::um::winuser::{
-    KBDLLHOOKSTRUCT, MSLLHOOKSTRUCT, SetWindowsHookExA, WH_KEYBOARD_LL, WH_MOUSE_LL, WHEEL_DELTA,
-    WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
-    WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN,
-    WM_SYSKEYUP, WM_XBUTTONDOWN, WM_XBUTTONUP,
+    KBDLLHOOKSTRUCT, MSLLHOOKSTRUCT, SetWindowsHookExA, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN,
+    WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    WM_XBUTTONDOWN, WM_XBUTTONUP,
 };
 pub const TRUE: i32 = 1;
 pub const FALSE: i32 = 0;
@@ -94,17 +94,25 @@ pub unsafe fn convert(param: WPARAM, lpdata: LPARAM) -> Option<EventType> {
             }
             Ok(WM_MOUSEWHEEL) => {
                 let delta = get_delta(lpdata) as c_short;
-                Some(EventType::Wheel {
-                    delta_x: 0,
-                    delta_y: (delta / WHEEL_DELTA) as i64,
-                })
+                Some(EventType::Wheel(WheelEvent {
+                    delta_x: 0.0,
+                    delta_y: f64::from(delta),
+                    unit: WheelDeltaUnit::WindowsWheelDelta,
+                    phase: 0,
+                    momentum_phase: 0,
+                    is_continuous: delta.unsigned_abs() < 120,
+                }))
             }
             Ok(WM_MOUSEHWHEEL) => {
                 let delta = get_delta(lpdata) as c_short;
-                Some(EventType::Wheel {
-                    delta_x: (delta / WHEEL_DELTA) as i64,
-                    delta_y: 0,
-                })
+                Some(EventType::Wheel(WheelEvent {
+                    delta_x: f64::from(delta),
+                    delta_y: 0.0,
+                    unit: WheelDeltaUnit::WindowsWheelDelta,
+                    phase: 0,
+                    momentum_phase: 0,
+                    is_continuous: delta.unsigned_abs() < 120,
+                }))
             }
             _ => None,
         }
