@@ -131,13 +131,18 @@ pub unsafe fn convert(
                 }
             }
             CGEventType::ScrollWheel => {
+                // Use the pixel-precision point deltas rather than the coarse
+                // line-based DeltaAxis fields: continuous (trackpad) scrolls
+                // quantize to 0/±1 lines, losing most of the gesture. Pixel
+                // units also match what `simulate` emits (CGScrollEventUnit::Pixel),
+                // so a listen→simulate round trip preserves scroll magnitude.
                 let delta_y = CGEvent::integer_value_field(
                     Some(cg_event.as_ref()),
-                    CGEventField::ScrollWheelEventDeltaAxis1,
+                    CGEventField::ScrollWheelEventPointDeltaAxis1,
                 );
                 let delta_x = CGEvent::integer_value_field(
                     Some(cg_event.as_ref()),
-                    CGEventField::ScrollWheelEventDeltaAxis2,
+                    CGEventField::ScrollWheelEventPointDeltaAxis2,
                 );
                 Some(EventType::Wheel { delta_x, delta_y })
             }
