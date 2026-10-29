@@ -62,6 +62,7 @@ unsafe extern "C" {
 
 pub struct Keyboard {
     is_main_thread: bool,
+    key_names: bool,
     dead_state: u32,
     shift: bool,
     caps_lock: bool,
@@ -70,10 +71,19 @@ impl Keyboard {
     pub fn new() -> Option<Keyboard> {
         Some(Keyboard {
             is_main_thread: true,
+            key_names: true,
             dead_state: 0,
             shift: false,
             caps_lock: false,
         })
+    }
+
+    pub fn set_key_names_enabled(&mut self, enabled: bool) {
+        self.key_names = enabled;
+    }
+
+    pub(crate) fn key_names_enabled(&self) -> bool {
+        self.key_names
     }
 
     pub fn set_is_main_thread(&mut self, b: bool) {

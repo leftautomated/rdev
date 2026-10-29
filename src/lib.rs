@@ -218,7 +218,9 @@ pub use crate::rdev::{
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use crate::macos::{Keyboard, set_is_main_thread};
+pub use crate::macos::{
+    Keyboard, TapReenableCounts, set_is_main_thread, set_key_names_enabled, tap_reenable_counts,
+};
 #[cfg(target_os = "macos")]
 use crate::macos::{display_size as _display_size, listen as _listen, simulate as _simulate};
 

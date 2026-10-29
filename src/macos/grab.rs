@@ -1,5 +1,6 @@
 #![allow(improper_ctypes_definitions)]
 use crate::macos::common::*;
+use crate::macos::tap::TapSlot;
 use crate::rdev::{Event, GrabError};
 use objc2_core_foundation::{CFMachPort, CFRunLoop, kCFRunLoopCommonModes};
 use objc2_core_graphics::{
@@ -10,6 +11,7 @@ use objc2_foundation::NSAutoreleasePool;
 use std::os::raw::c_void;
 use std::ptr::{NonNull, null_mut};
 
+static TAP: TapSlot = TapSlot::new();
 static mut GLOBAL_CALLBACK: Option<Box<dyn FnMut(Event) -> Option<Event>>> = None;
 
 #[link(name = "Cocoa", kind = "framework")]
@@ -21,8 +23,14 @@ unsafe extern "C-unwind" fn raw_callback(
     cg_event: NonNull<CGEvent>,
     _user_info: *mut c_void,
 ) -> *mut CGEvent {
-    let opt = KEYBOARD_STATE.lock();
-    if let Ok(mut keyboard) = opt {
+    if TAP.reenable_if_disabled(_type) {
+        return cg_event.as_ptr();
+    }
+    // A panic elsewhere must not turn into every later event being dropped.
+    let mut keyboard = KEYBOARD_STATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    {
         unsafe {
             if let Some(event) = convert(_type, cg_event, &mut keyboard) {
                 // Reborrowing the global callback pointer.
@@ -62,8 +70,10 @@ where
         let current_loop = CFRunLoop::current().unwrap();
         current_loop.add_source(Some(&loop_), kCFRunLoopCommonModes);
 
+        TAP.set(&tap);
         CGEvent::tap_enable(&tap, true);
         CFRunLoop::run();
+        TAP.clear();
     }
     Ok(())
 }

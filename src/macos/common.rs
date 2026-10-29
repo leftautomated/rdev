@@ -1,14 +1,14 @@
 #![allow(clippy::upper_case_acronyms)]
 use crate::macos::keyboard::Keyboard;
-use crate::rdev::{Button, Event, EventType, WheelDeltaUnit, WheelEvent};
+use crate::rdev::{Button, Event, EventType, Key, WheelDeltaUnit, WheelEvent};
 use core::ptr::NonNull;
 use lazy_static::lazy_static;
-use objc2_core_graphics::{CGEvent, CGEventField, CGEventFlags, CGEventType};
+use objc2_core_graphics::{CGEvent, CGEventField, CGEventFlags, CGEventType, CGKeyCode};
 use std::convert::TryInto;
 use std::sync::Mutex;
 use std::time::SystemTime;
 
-use crate::macos::keycodes::key_from_code_or_name;
+use crate::macos::keycodes::{key_from_code, key_from_code_or_name};
 
 use super::keycodes::key_from_special_key;
 
@@ -27,6 +27,37 @@ fn fixed_delta_to_points(fixed: i64, fallback_points: i64) -> f64 {
 
 pub fn set_is_main_thread(b: bool) {
     KEYBOARD_STATE.lock().unwrap().set_is_main_thread(b);
+}
+
+/// Whether listen/grab fill `Event::name` with the typed text. Defaults to true.
+///
+/// Looking up the name reads the keyboard layout, which must happen on the main
+/// thread; off the main thread (see `set_is_main_thread`) every key event waits
+/// for the main queue, and a busy main thread then stalls the tap until macOS
+/// disables it. Disable names when the caller only needs `EventType`. Key
+/// identity is unaffected, apart from F21-F24 on keyboards whose keycodes rdev
+/// does not know, which still resolve through a name lookup.
+pub fn set_key_names_enabled(enabled: bool) {
+    KEYBOARD_STATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .set_key_names_enabled(enabled);
+}
+
+/// Resolves the key for a keycode, reading the layout-dependent name only when
+/// the keycode alone is not enough.
+unsafe fn key_for_code(
+    code: i64,
+    flags: CGEventFlags,
+    keyboard_state: &mut Keyboard,
+) -> Option<Key> {
+    let code_u16: CGKeyCode = code.try_into().ok()?;
+    let key = key_from_code(code_u16);
+    if !matches!(key, Key::Unknown(_)) {
+        return Some(key);
+    }
+    let name = unsafe { keyboard_state.create_string_for_key(code, flags) };
+    Some(key_from_code_or_name(code_u16, name.as_deref()))
 }
 
 pub unsafe fn convert(
@@ -69,8 +100,7 @@ pub unsafe fn convert(
                     CGEventField::KeyboardEventKeycode,
                 );
                 let flags = CGEvent::flags(Some(cg_event.as_ref()));
-                let name = keyboard_state.create_string_for_key(code, flags);
-                let key = key_from_code_or_name(code.try_into().ok()?, name.as_deref());
+                let key = key_for_code(code, flags, keyboard_state)?;
                 Some(EventType::KeyPress(key))
             }
             CGEventType::KeyUp => {
@@ -79,8 +109,7 @@ pub unsafe fn convert(
                     CGEventField::KeyboardEventKeycode,
                 );
                 let flags = CGEvent::flags(Some(cg_event.as_ref()));
-                let name = keyboard_state.create_string_for_key(code, flags);
-                let key = key_from_code_or_name(code.try_into().ok()?, name.as_deref());
+                let key = key_for_code(code, flags, keyboard_state)?;
                 Some(EventType::KeyRelease(key))
             }
             CGEventType::FlagsChanged => {
@@ -210,7 +239,7 @@ pub unsafe fn convert(
         };
         if let Some(event_type) = option_type {
             let name = match event_type {
-                EventType::KeyPress(_) => {
+                EventType::KeyPress(_) if keyboard_state.key_names_enabled() => {
                     let code = CGEvent::integer_value_field(
                         Some(cg_event.as_ref()),
                         CGEventField::KeyboardEventKeycode,
